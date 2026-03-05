@@ -17,6 +17,10 @@ pub fn info(text: &str) -> String {
   text.cyan().to_string()
 }
 
+pub fn strong(text: &str) -> String {
+  text.bold().to_string()
+}
+
 pub fn section(title: &str) {
   println!("{}", title.bold());
 }

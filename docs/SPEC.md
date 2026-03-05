@@ -69,8 +69,7 @@ email = "me@example.com"
 key = "~/.ssh/id_ed25519_personal"
 
 [hook]
-shell = true
-git = true
+fixPolicy = "continue"    # continue | abort-once
 
 [run]
 allowProfileOverride = true
@@ -145,9 +144,7 @@ Common config item reference (must stay in sync with README):
 - `[profile.<name>.gpg]`: Optional `gpg.*` fields for the profile.
 - `[profile.<name>.ssh].key`: SSH private key path for the profile (supports `~` expansion).
 - `[profile.<name>.ssh].identitiesOnly`: When `true`, only explicitly configured keys are used, avoiding unrelated keys.
-- `[hook].shell`: Whether to enable the shell-hook installation path (`gpx hook install --shell ...`).
-- `[hook].git`: Whether to enable the git-hook installation path (`gpx hook install --git`).
-- `[hook].fixPolicy`: Behavior after hook auto-fixes identity.
+- `[hook].fixPolicy`: Behavior after hook-mode auto-fixes identity.
   - `continue`: Continue current Git action after fixing.
   - `abort-once`: Abort current action once after fixing; user retries manually.
 - `[run].allowProfileOverride`: Controls whether `gpx run --profile <name> -- ...` may force a profile.
@@ -170,6 +167,7 @@ Documentation synchronization requirement:
 
 ```text
 gpx init
+gpx deinit
 gpx doctor
 gpx status
 gpx list [profiles|rules] [--json]
@@ -188,6 +186,7 @@ Behavior conventions:
 - `gpx -- <git args...>`: Alias of `gpx run -- <git args...>`, exactly identical semantics.
 - `gpx list [profiles|rules]`: List defined profiles or rules; defaults to human-readable report, `--json` outputs machine-readable data.
 - `gpx ssh-eval --profile <name>`: Internal command for SSH `Match exec`; returns exit code `0` when matched profile equals target, otherwise `1`.
+- `gpx deinit`: Remove GPX-managed include entry from `~/.gitconfig` and clean generated local artifacts.
 
 ## 6. Rule Engine Design
 
@@ -229,16 +228,25 @@ Behavior conventions:
 - Add a stable include entry to `~/.gitconfig` (if missing), for example:
 
 ```ini
+# >>> gpx managed include >>>
 [include]
-path = ~/.cache/gpx/git/active.gitconfig
+	path = ~/.cache/gpx/git/active.gitconfig
+# <<< gpx managed include <<<
 ```
 
 - `active.gitconfig` is maintained by gpx and includes the concrete profile file:
 
 ```ini
+# gpx managed file
 [include]
-path = ~/.cache/gpx/git/profiles/work.gitconfig
+	path = ~/.cache/gpx/git/profiles/work.gitconfig
 ```
+
+- `gpx deinit` removes the managed include block from `~/.gitconfig` and clears generated cache/state artifacts.
+- `gpx deinit` also removes bootstrapped `config.toml` only when it still matches the original auto-generated template (modified user config is preserved).
+- After artifact cleanup, `gpx deinit` also prunes empty GPX root directories under XDG config/cache/state paths when they are empty.
+- When both `config.toml` and legacy `config` are absent, `gpx init` bootstraps a commented `config.toml` template for user edits.
+- `gpx init` also ensures `~/.ssh/config` has a GPX-managed include block for `~/.cache/gpx/ssh/gpx_ssh.conf`.
 
 Advantages:
 
@@ -304,7 +312,7 @@ Match exec "gpx ssh-eval --profile 'work'"
 - Nushell: trigger via `env_change.PWD` hook
 - Tcsh/Elvish: trigger via directory-change events (`chpwd/after-chdir`)
 - Debounce: write only when repository root changes or path match result changes
-- For shells without built-in adapter, `gpx hook install --shell <name>` outputs a generic script snippet that can be `source`d manually
+- `gpx hook install --shell <name>` writes shell hook script and injects a managed startup block into shell rc/config files for immediate activation (`bash/zsh/fish/nushell/tcsh/elvish`)
 
 Goal: Complete profile switching quickly after `cd`, covering the primary command-line path.
 
@@ -324,6 +332,10 @@ Independence:
 - Shell hook only: smooth interactive flow, GUI clients may miss triggers
 - Git hook only: no shell dependency, but switching is delayed until Git action
 - Both enabled: recommended
+
+Managed startup block requirement:
+
+- Shell startup file updates must be wrapped in explicit managed comments so uninstall can remove only GPX-owned content.
 
 ## 10. Run Mode (Zero Persistence)
 
@@ -468,7 +480,7 @@ Acceptance checklist:
   - Title line: `<Title> report` (bold)
   - Item line: `- <Label>: <Value>`
   - Note line: `- <Message>`
-- Commands like `doctor/status/init/list/check/hook/apply --dry-run` must follow the same output style; no command may use inconsistent prefixes or scattered wording.
+- Commands like `doctor/status/init/deinit/list/check/hook/apply --dry-run` must follow the same output style; no command may use inconsistent prefixes or scattered wording.
 - Unified status coloring:
   - Success/normal: `OK`/`ENABLED`/`CREATED`/`UPDATED`/`INSTALLED`, etc. in green or cyan (informational color)
   - Warning/default/missing: `WARN`/`UNSET`/`<none>`/`MISSING`, etc. in yellow

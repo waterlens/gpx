@@ -17,6 +17,8 @@ pub struct Cli {
 pub enum Commands {
   /// Initialize GPX setup in ~/.gitconfig
   Init,
+  /// Remove GPX bootstrap setup from ~/.gitconfig
+  Deinit,
   /// Run full diagnostics
   Doctor,
   /// Show current GPX status

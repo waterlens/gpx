@@ -100,10 +100,6 @@ pub struct Rule {
 #[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HookConfig {
-  #[serde(default)]
-  pub shell: bool,
-  #[serde(default)]
-  pub git: bool,
   #[serde(default = "default_hook_fix_policy")]
   pub fix_policy: HookFixPolicy,
 }
@@ -378,14 +374,6 @@ impl AppContext {
       }
     }
 
-    config.hook.shell = git_config
-      .boolean("hook.shell")
-      .and_then(|r| r.ok())
-      .unwrap_or_default();
-    config.hook.git = git_config
-      .boolean("hook.git")
-      .and_then(|r| r.ok())
-      .unwrap_or_default();
     if let Some(policy) = git_config.string("hook.fixPolicy") {
       config.hook.fix_policy = match policy.to_string().as_str() {
         "abort-once" => HookFixPolicy::AbortOnce,

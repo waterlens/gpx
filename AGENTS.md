@@ -56,6 +56,7 @@ Do not duplicate long spec content in multiple files.
 
 ```text
 gpx init
+gpx deinit
 gpx doctor
 gpx status [--verbose]
 gpx list [profiles|rules] [--json]

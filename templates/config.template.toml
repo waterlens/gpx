@@ -1,0 +1,186 @@
+# gpx config template (full example)
+# ------------------------------------------------------------------------------
+# How to use:
+# 1) Copy the sections you need by removing leading '# ' from selected lines.
+# 2) Keep at least one profile and one matching rule, OR set core.defaultProfile.
+# 3) Run `gpx check` and `gpx apply` after edits.
+#
+# Config files:
+# - Preferred: $XDG_CONFIG_HOME/gpx/config.toml (usually ~/.config/gpx/config.toml)
+# - Legacy fallback: $XDG_CONFIG_HOME/gpx/config (INI-style)
+#
+# ------------------------------------------------------------------------------
+# Core behavior
+# ------------------------------------------------------------------------------
+# [core]
+# defaultProfile = "personal"      # fallback when no rule matches
+# ruleMode = "first-match"         # first-match | highest-score
+# mode = "global-active"           # global-active | repo-local
+# - global-active: update shared active include at ~/.cache/gpx/git/active.gitconfig
+# - repo-local: write include.path into current repo config (requires running inside a git repo)
+#   - linked worktree + extensions.worktreeConfig=false needs worktree.allowSharedFallback=true
+#
+# first-match:
+# - rules are evaluated in declaration order
+# - first matched rule wins
+#
+# highest-score:
+# - higher `priority` wins first
+# - if priority ties, more specific rule wins
+# - unresolved ties are an error
+#
+# ------------------------------------------------------------------------------
+# Profiles
+# ------------------------------------------------------------------------------
+# A profile can define:
+# - [profile.<name>.user]: name/email/signingkey
+# - [profile.<name>.gpg]: format
+# - [profile.<name>.ssh]: key/identitiesOnly
+#
+# Personal profile
+# [profile.personal.user]
+# name = "Alice"
+# email = "alice@example.com"
+# signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+#
+# [profile.personal.gpg]
+# format = "ssh"                   # common: ssh | openpgp | x509
+#
+# [profile.personal.ssh]
+# key = "~/.ssh/id_ed25519_personal"
+# identitiesOnly = true
+#
+# Work profile
+# [profile.work.user]
+# name = "Alice Chen"
+# email = "alice@corp.com"
+# signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+#
+# [profile.work.gpg]
+# format = "ssh"
+#
+# [profile.work.ssh]
+# key = "~/.ssh/id_ed25519_work"
+# identitiesOnly = true
+#
+# OSS profile
+# [profile.oss.user]
+# name = "Alice OSS"
+# email = "alice@users.noreply.github.com"
+#
+# [profile.oss.ssh]
+# key = "~/.ssh/id_ed25519_oss"
+# identitiesOnly = true
+#
+# Client A profile
+# [profile.clientA.user]
+# name = "Alice (Client A)"
+# email = "alice@client-a.com"
+#
+# [profile.clientA.ssh]
+# key = "~/.ssh/id_ed25519_client_a"
+# identitiesOnly = true
+#
+# Client B profile
+# [profile.clientB.user]
+# name = "Alice (Client B)"
+# email = "alice@client-b.com"
+#
+# [profile.clientB.ssh]
+# key = "~/.ssh/id_ed25519_client_b"
+# identitiesOnly = true
+#
+# ------------------------------------------------------------------------------
+# Hook / Run / Worktree / SSH runtime
+# ------------------------------------------------------------------------------
+# [hook]
+# fixPolicy = "abort-once"         # continue | abort-once; only affects `gpx apply --hook-mode` when profile changes
+#
+# [run]
+# allowProfileOverride = true      # allows `gpx run --profile <name> -- ...`
+#
+# [worktree]
+# allowSharedFallback = false      # repo-local mode fallback when worktreeConfig is disabled
+#
+# [ssh]
+# dynamicMatch = false             # true => generate Match exec blocks (experimental)
+#
+# ------------------------------------------------------------------------------
+# Rules
+# ------------------------------------------------------------------------------
+# Rule fields:
+# - profile (required): target profile name
+# - priority (optional, default 0): used by highest-score mode
+# - matchers: at least one required
+#   - "match.path"
+#   - "match.remoteHost"
+#   - "match.remoteOrg"
+#   - "match.fileExists"
+#
+# Company repos by path
+# [rule.corp-path]
+# profile = "work"
+# priority = 200
+# "match.path" = "~/code/company/**"
+#
+# Company repos by remote host + org (AND condition)
+# [rule.corp-remote]
+# profile = "work"
+# priority = 180
+# "match.remoteHost" = "github.com"
+# "match.remoteOrg" = "corp-org"
+#
+# Explicit local marker file inside repo root
+# [rule.corp-marker]
+# profile = "work"
+# priority = 190
+# "match.fileExists" = ".gpx-work"
+#
+# Open source repos
+# [rule.oss-github]
+# profile = "oss"
+# priority = 120
+# "match.remoteHost" = "github.com"
+# "match.remoteOrg" = "oss-org"
+#
+# Client A by directory
+# [rule.client-a-path]
+# profile = "clientA"
+# priority = 210
+# "match.path" = "~/code/clients/client-a/**"
+#
+# Client B by remote namespace
+# [rule.client-b-remote]
+# profile = "clientB"
+# priority = 210
+# "match.remoteHost" = "gitlab.com"
+# "match.remoteOrg" = "client-b-group"
+#
+# Personal fallback-ish rule by path
+# [rule.personal-path]
+# profile = "personal"
+# priority = 50
+# "match.path" = "~/code/personal/**"
+#
+# ------------------------------------------------------------------------------
+# Strategy demos
+# ------------------------------------------------------------------------------
+# Demo A: declaration-order strategy
+# - Set core.ruleMode = "first-match"
+# - Keep [rule.corp-path] above [rule.personal-path]
+# - corp-path will win when both patterns match
+#
+# Demo B: score strategy
+# - Set core.ruleMode = "highest-score"
+# - Increase priority for strict corporate rules (e.g. 200+)
+# - Keep broad personal rules lower (e.g. 0~50)
+#
+# ------------------------------------------------------------------------------
+# Minimum viable config example
+# ------------------------------------------------------------------------------
+# [core]
+# defaultProfile = "personal"
+#
+# [profile.personal.user]
+# name = "Alice"
+# email = "alice@example.com"

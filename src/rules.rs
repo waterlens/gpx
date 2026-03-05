@@ -692,6 +692,7 @@ mod tests {
   fn test_submodule_and_parent_resolve_independently() {
     fn run_ok(cwd: &Path, args: &[&str]) {
       let status = std::process::Command::new("git")
+        .args(["-c", "core.hooksPath=/dev/null"])
         .args(args)
         .current_dir(cwd)
         .status()

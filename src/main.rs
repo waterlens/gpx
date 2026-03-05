@@ -46,6 +46,10 @@ fn run() -> Result<()> {
         info!("Initializing gpx...");
         gitops::init(&ctx)?;
       }
+      Commands::Deinit => {
+        info!("Deinitializing gpx...");
+        gitops::deinit(&ctx)?;
+      }
       Commands::Doctor => {
         info!("Running doctor...");
         doctor::run(&ctx)?;
