@@ -64,8 +64,8 @@ gpx check [--cwd <path>] [--json]
 gpx apply [--cwd <path>] [--profile <name>] [--dry-run]
 gpx hook install [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
 gpx hook uninstall [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
-gpx run [--profile <name>] -- <git args...>
-gpx -- <git args...>
+gpx git [-p <name>|--profile <name>] -- <git args...>
+gpx [-p <name>|--profile <name>] -- <command args...>
 gpx ssh-eval --profile <name> [--cwd <path>]   # internal
 ```
 

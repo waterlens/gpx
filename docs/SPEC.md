@@ -147,7 +147,7 @@ Common config item reference (must stay in sync with README):
 - `[hook].fixPolicy`: Behavior after hook-mode auto-fixes identity.
   - `continue`: Continue current Git action after fixing.
   - `abort-once`: Abort current action once after fixing; user retries manually.
-- `[run].allowProfileOverride`: Controls whether `gpx run --profile <name> -- ...` may force a profile.
+- `[run].allowProfileOverride`: Controls whether `gpx git -p/--profile <name> -- ...` or `gpx -p/--profile <name> -- ...` may force a profile.
 - `[worktree].allowSharedFallback`: In `repo-local` mode when `extensions.worktreeConfig` is disabled, controls fallback to shared `--local` include writes.
 - `[ssh].dynamicMatch`: When `true`, generate dynamic SSH blocks using `Match exec "gpx ssh-eval ..."`; default off for predictability and performance.
 - `[rule.<name>].profile`: Target profile when rule matches; must exist.
@@ -175,15 +175,16 @@ gpx check [--cwd <path>] [--json]
 gpx apply [--cwd <path>] [--profile <name>] [--dry-run]
 gpx hook install [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
 gpx hook uninstall [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
-gpx run [--profile <name>] -- <git args...>
+gpx git [-p <name>|--profile <name>] -- <git args...>
+gpx [-p <name>|--profile <name>] -- <command args...>
 gpx ssh-eval --profile <name> [--cwd <path>]   # internal; for Match exec
 ```
 
 Behavior conventions:
 
-- `gpx run -- <git args...>`: Evaluate rules in real time and execute Git with zero persistence (no disk writes).
-- `gpx run --profile ... -- <git args...>`: Force a profile with zero persistence.
-- `gpx -- <git args...>`: Alias of `gpx run -- <git args...>`, exactly identical semantics.
+- `gpx git -- <git args...>`: Evaluate rules in real time and execute Git with zero persistence (no disk writes).
+- `gpx git -p/--profile ... -- <git args...>`: Force a profile with zero persistence.
+- `gpx [-p <name>|--profile <name>] -- <command args...>`: Passthrough to any executable with the same zero-persistence profile environment.
 - `gpx list [profiles|rules]`: List defined profiles or rules; defaults to human-readable report, `--json` outputs machine-readable data.
 - `gpx ssh-eval --profile <name>`: Internal command for SSH `Match exec`; returns exit code `0` when matched profile equals target, otherwise `1`.
 - `gpx deinit`: Remove GPX-managed include entry from `~/.gitconfig` and clean generated local artifacts.
@@ -342,13 +343,13 @@ Managed startup block requirement:
 Syntax:
 
 ```bash
-gpx [--profile <name>] -- <git command...>
+gpx [-p <name>|--profile <name>] -- <command...>
 ```
 
 Equivalent to:
 
 ```bash
-gpx run [--profile <name>] -- <git command...>
+gpx git [-p <name>|--profile <name>] -- <git command...>
 ```
 
 Implementation:
@@ -365,7 +366,7 @@ Implementation:
 
 Result:
 
-- Effects expire when command exits; no persistent side effects.
+- Effects expire when command exits; no persistent side effects for both `gpx git ...` and `gpx [-p/--profile ...] -- <command ...>`.
 
 ## 11. Submodule and Worktree
 
@@ -452,14 +453,14 @@ Acceptance checklist:
 
 - path/remote/file rule types match correctly
 - Shell Hook and Git Hook can be enabled independently without dependency on each other
-- run mode leaves no config residue after execution
+- `git` subcommand and passthrough mode leave no config residue after execution
 - submodule and worktree behavior follows expected strategy
 - repeated profile switching does not create duplicate include entries or dirty config
 
 ## 16. Current Capability List
 
 - profile/rule parsing and validation (TOML/INI compatible)
-- `check/apply/status/list/run/doctor` commands available
+- `check/apply/status/list/git/doctor` commands available
 - Git include injection (global active include + repo-local/worktree strategy)
 - SSH include static refresh and optional dynamic matching via `ssh.dynamicMatch`
 - shell hook (bash/zsh/fish) and git hook (pre-commit/pre-push/post-checkout) install/uninstall

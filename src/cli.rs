@@ -5,11 +5,15 @@ use std::path::PathBuf;
 #[command(name = "gpx")]
 #[command(about = "Git Profile Extension", long_about = None)]
 pub struct Cli {
+  /// Profile override for passthrough mode (when no subcommand is used)
+  #[arg(short = 'p', long, value_name = "PROFILE")]
+  pub profile: Option<String>,
+
   #[command(subcommand)]
   pub command: Option<Commands>,
 
-  /// Git arguments to pass through (when no subcommand is used)
-  #[arg(trailing_var_arg = true, value_name = "GIT_ARGS")]
+  /// Command and arguments to pass through (when no subcommand is used)
+  #[arg(trailing_var_arg = true, value_name = "CMD")]
   pub args: Vec<String>,
 }
 
@@ -58,8 +62,8 @@ pub enum Commands {
   },
   /// Run a git command with profile environment (zero-persistence)
   #[command(trailing_var_arg = true)]
-  Run {
-    #[arg(long, value_name = "PROFILE")]
+  Git {
+    #[arg(short = 'p', long, value_name = "PROFILE")]
     profile: Option<String>,
     /// Git arguments to pass through
     args: Vec<String>,

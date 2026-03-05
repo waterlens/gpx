@@ -1,11 +1,34 @@
 use crate::config::{AppContext, Config};
 use crate::error::GpxError;
 use crate::rules::{gather_context, resolve_profile};
-use anyhow::bail;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::process::Command;
 
-pub fn execute(ctx: &AppContext, profile_name: Option<String>, args: Vec<String>) -> Result<()> {
+pub fn execute_git(
+  ctx: &AppContext,
+  profile_name: Option<String>,
+  git_args: Vec<String>,
+) -> Result<()> {
+  execute_command(ctx, profile_name, "git".to_string(), git_args)
+}
+
+pub fn execute_passthrough(
+  ctx: &AppContext,
+  profile_name: Option<String>,
+  command_and_args: Vec<String>,
+) -> Result<()> {
+  let (program, args) = command_and_args
+    .split_first()
+    .context("No command provided for passthrough mode")?;
+  execute_command(ctx, profile_name, program.clone(), args.to_vec())
+}
+
+fn execute_command(
+  ctx: &AppContext,
+  profile_name: Option<String>,
+  program: String,
+  args: Vec<String>,
+) -> Result<()> {
   let config = ctx.load_config()?;
   config.validate()?;
 
@@ -18,26 +41,21 @@ pub fn execute(ctx: &AppContext, profile_name: Option<String>, args: Vec<String>
     select_requested_profile(&config, None, resolved)?
   };
 
-  let profile_name = match profile_name {
-    Some(name) => name,
-    None => {
-      // If no profile matched, just run git as is
-      let mut cmd = Command::new("git");
-      cmd.args(args);
-      let status = cmd.status()?;
-      std::process::exit(status.code().unwrap_or(1));
-    }
-  };
-
-  let profile = config
-    .profile
-    .get(&profile_name)
-    .context(format!("Profile '{}' not found", profile_name))?;
-
-  let mut cmd = Command::new("git");
+  let mut cmd = Command::new(&program);
   cmd.args(args);
 
-  // GIT_CONFIG_COUNT/KEY/VALUE
+  if let Some(profile_name) = profile_name {
+    let profile = config
+      .profile
+      .get(&profile_name)
+      .context(format!("Profile '{}' not found", profile_name))?;
+    apply_profile_env(&mut cmd, profile);
+  }
+
+  exec_command(cmd, &program)
+}
+
+fn apply_profile_env(cmd: &mut Command, profile: &crate::config::Profile) {
   let mut config_idx = 0;
   if let Some(ref user) = profile.user {
     if let Some(ref name) = user.name {
@@ -65,7 +83,6 @@ pub fn execute(ctx: &AppContext, profile_name: Option<String>, args: Vec<String>
   }
   cmd.env("GIT_CONFIG_COUNT", config_idx.to_string());
 
-  // GIT_SSH_COMMAND
   if let Some(ref ssh) = profile.ssh {
     let mut ssh_args = Vec::new();
     if let Some(ref key) = ssh.key {
@@ -78,13 +95,14 @@ pub fn execute(ctx: &AppContext, profile_name: Option<String>, args: Vec<String>
       cmd.env("GIT_SSH_COMMAND", format!("ssh {}", ssh_args.join(" ")));
     }
   }
+}
 
-  // Unix exec replacing current process
+fn exec_command(mut cmd: Command, program: &str) -> Result<()> {
   #[cfg(unix)]
   {
     use std::os::unix::process::CommandExt;
     let err = cmd.exec();
-    Err(anyhow::anyhow!("Failed to exec git: {}", err))
+    Err(anyhow!("Failed to exec {}: {}", program, err))
   }
 
   #[cfg(not(unix))]

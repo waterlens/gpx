@@ -58,10 +58,11 @@
   gpx list rules
   ```
 
-- Run one Git command with a profile without persistent changes:
+- Run zero-persistence passthrough commands (`gpx git` and no-subcommand mode):
 
   ```bash
-  gpx run --profile work -- git fetch
+  gpx git -p work -- fetch
+  gpx -p work -- cat ~/.gitconfig
   gpx -- git status
   ```
 
@@ -128,8 +129,8 @@ gpx check [--cwd <path>] [--json]
 gpx apply [--cwd <path>] [--profile <name>] [--dry-run]
 gpx hook install [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
 gpx hook uninstall [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
-gpx run [--profile <name>] -- <git args...>
-gpx -- <git args...>      # alias of gpx run --
+gpx git [-p <name>|--profile <name>] -- <git args...>
+gpx [-p <name>|--profile <name>] -- <command args...>
 ```
 
 ## Detailed Spec

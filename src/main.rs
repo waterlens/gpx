@@ -1,4 +1,5 @@
 use anyhow::Result;
+use anyhow::bail;
 use clap::Parser;
 use owo_colors::OwoColorize;
 use tracing::{Level, info};
@@ -38,9 +39,19 @@ fn run() -> Result<()> {
   tracing::subscriber::set_global_default(subscriber)?;
 
   let ctx = AppContext::new()?;
-  let cli = Cli::parse();
+  let Cli {
+    profile: top_level_profile,
+    command,
+    args,
+  } = Cli::parse();
 
-  match cli.command {
+  if top_level_profile.is_some() && !matches!(&command, None | Some(Commands::Git { .. })) {
+    bail!(
+      "--profile/-p is only valid for `gpx git ...` or passthrough mode (`gpx -p ... -- <command>`)"
+    );
+  }
+
+  match command {
     Some(command) => match command {
       Commands::Init => {
         info!("Initializing gpx...");
@@ -85,9 +96,10 @@ fn run() -> Result<()> {
         info!("Hook command: {:?}", command);
         hooks::handle(&ctx, command)?;
       }
-      Commands::Run { profile, args } => {
+      Commands::Git { profile, args } => {
+        let profile = profile.or(top_level_profile);
         info!("Running git command with profile {:?}: {:?}", profile, args);
-        run::execute(&ctx, profile, args)?;
+        run::execute_git(&ctx, profile, args)?;
       }
       Commands::SshEval { profile, cwd } => {
         let matched = sshops::ssh_eval_matches(&ctx, &profile, cwd)?;
@@ -95,10 +107,16 @@ fn run() -> Result<()> {
       }
     },
     None => {
-      if !cli.args.is_empty() {
-        info!("Running git command (default): {:?}", cli.args);
-        run::execute(&ctx, None, cli.args)?;
+      if !args.is_empty() {
+        info!(
+          "Running passthrough command with profile {:?}: {:?}",
+          top_level_profile, args
+        );
+        run::execute_passthrough(&ctx, top_level_profile, args)?;
       } else {
+        if top_level_profile.is_some() {
+          bail!("--profile/-p requires a command in passthrough mode");
+        }
         use clap::CommandFactory;
         Cli::command().print_help()?;
         println!();
