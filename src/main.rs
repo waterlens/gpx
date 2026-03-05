@@ -10,6 +10,7 @@ mod doctor;
 mod error;
 mod gitops;
 mod hooks;
+mod list;
 mod output;
 mod rules;
 mod run;
@@ -52,6 +53,13 @@ fn run() -> Result<()> {
       Commands::Status { verbose } => {
         info!("Checking status (verbose: {})...", verbose);
         state::status(&ctx, verbose)?;
+      }
+      Commands::List { kind, json } => {
+        info!(
+          "Listing config entities (kind: {:?}, json: {})...",
+          kind, json
+        );
+        list::run(&ctx, kind, json)?;
       }
       Commands::Check { cwd, json } => {
         info!("Checking profile for {:?} (json: {})...", cwd, json);

@@ -572,7 +572,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpx"
+name = "gpx-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",

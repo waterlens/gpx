@@ -1,5 +1,5 @@
 [package]
-name = "gpx"
+name = "gpx-cli"
 version = "0.1.0"
 edition = "2024"
 description = "Automatically switch Git and SSH identities by active profile."
@@ -9,6 +9,10 @@ readme = "README.md"
 license = "MIT"
 keywords = ["git", "ssh", "profile", "identity", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "gpx"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"

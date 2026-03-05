@@ -7,12 +7,21 @@
 - Unix platforms (macOS / Linux)
 - Users who need to switch identities between personal/corporate and multi-account repositories
 
-## Install and Build
+## Install
 
-```bash
-cargo build --release
-./target/release/gpx --help
-```
+- Install from crates.io:
+
+  ```bash
+  cargo install gpx-cli
+  gpx --help
+  ```
+
+- Build from source:
+
+  ```bash
+  cargo build --release
+  ./target/release/gpx --help
+  ```
 
 ## Quick Start
 
@@ -219,6 +228,7 @@ priority = 180
 gpx init
 gpx doctor
 gpx status [--verbose]
+gpx list [profiles|rules] [--json]
 gpx check [--cwd <path>] [--json]
 gpx apply [--cwd <path>] [--profile <name>] [--dry-run]
 gpx hook install [--shell bash|zsh|fish|nushell|tcsh|elvish] [--git]
@@ -232,6 +242,7 @@ gpx -- <git args...>      # gpx run -- <git args...>
 - Supported rule conditions: `match.path`, `match.remoteHost`, `match.remoteOrg`, `match.fileExists`
 - If one rule defines multiple `match.*` conditions, all of them must match
 - Falls back to `core.defaultProfile` when no rule matches
+- `list` shows configured `profiles` / `rules`; use `--json` for machine-readable output
 - `run` mode does not write any config; it only injects environment variables for the current Git command
 - Whether `--profile` can force override is controlled by `run.allowProfileOverride`
 

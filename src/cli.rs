@@ -24,6 +24,13 @@ pub enum Commands {
     #[arg(short, long)]
     verbose: bool,
   },
+  /// List configured profiles or rules
+  List {
+    #[arg(value_enum)]
+    kind: Option<ListKind>,
+    #[arg(long)]
+    json: bool,
+  },
   /// Check which profile would be applied for a path
   Check {
     #[arg(long, value_name = "PATH")]
@@ -63,6 +70,12 @@ pub enum Commands {
     #[arg(long, value_name = "PATH")]
     cwd: Option<PathBuf>,
   },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ListKind {
+  Profiles,
+  Rules,
 }
 
 #[derive(Subcommand, Debug)]
