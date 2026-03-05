@@ -2,6 +2,13 @@
 name = "gpx"
 version = "0.1.0"
 edition = "2024"
+description = "Automatically switch Git and SSH identities by active profile."
+repository = "https://github.com/waterlens/gpx"
+homepage = "https://github.com/waterlens/gpx"
+readme = "README.md"
+license = "MIT"
+keywords = ["git", "ssh", "profile", "identity", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow = "1.0.102"
