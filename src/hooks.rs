@@ -1,5 +1,6 @@
 use crate::cli::{HookCommands, Shell};
 use crate::config::AppContext;
+use crate::output::{info, item, warn};
 use anyhow::Result;
 use std::path::PathBuf;
 use std::process::Command;
@@ -34,20 +35,23 @@ fn install_shell_hook(ctx: &AppContext, shell: Shell) -> Result<()> {
     Shell::Bash => {
       let path = shell_dir.join("gpx-bash.hook.sh");
       std::fs::write(&path, bash_hook_script())?;
-      println!("Installed bash hook script: {}", path.display());
-      println!("Add to ~/.bashrc: source {}", path.display());
+      item("Shell hook", format!("{} (bash)", info("INSTALLED")));
+      item("Hook script", path.display());
+      item("Source hint", format!("source {}", path.display()));
     }
     Shell::Zsh => {
       let path = shell_dir.join("gpx-zsh.hook.sh");
       std::fs::write(&path, zsh_hook_script())?;
-      println!("Installed zsh hook script: {}", path.display());
-      println!("Add to ~/.zshrc: source {}", path.display());
+      item("Shell hook", format!("{} (zsh)", info("INSTALLED")));
+      item("Hook script", path.display());
+      item("Source hint", format!("source {}", path.display()));
     }
     Shell::Fish => {
       let path = shell_dir.join("gpx-fish.hook.fish");
       std::fs::write(&path, fish_hook_script())?;
-      println!("Installed fish hook script: {}", path.display());
-      println!("Add to config.fish: source {}", path.display());
+      item("Shell hook", format!("{} (fish)", info("INSTALLED")));
+      item("Hook script", path.display());
+      item("Source hint", format!("source {}", path.display()));
     }
     Shell::Nushell | Shell::Tcsh | Shell::Elvish => {
       let path = shell_dir.join(format!("gpx-{}.hook.txt", shell_name(&shell)));
@@ -56,11 +60,11 @@ fn install_shell_hook(ctx: &AppContext, shell: Shell) -> Result<()> {
         shell_name(&shell)
       );
       std::fs::write(&path, content)?;
-      println!(
-        "Generated manual hook template for {}: {}",
-        shell_name(&shell),
-        path.display()
+      item(
+        "Shell hook template",
+        format!("{} ({})", warn("MANUAL"), shell_name(&shell)),
       );
+      item("Template path", path.display());
     }
   }
   Ok(())
@@ -84,8 +88,14 @@ fn install_git_hooks(ctx: &AppContext) -> Result<()> {
   if !status.success() {
     anyhow::bail!("Failed to set global core.hooksPath");
   }
-  println!("Installed git hooks at {}", hooks_dir.display());
-  println!("Hook behavior follows hook.fixPolicy in config (continue or abort-once).");
+  item(
+    "Git hooks",
+    format!("{} ({})", info("INSTALLED"), hooks_dir.display()),
+  );
+  item(
+    "Hook behavior",
+    "follows hook.fixPolicy in config (continue or abort-once)",
+  );
   Ok(())
 }
 
@@ -102,9 +112,15 @@ fn uninstall_shell_hook(ctx: &AppContext, shell: Shell) -> Result<()> {
 
   if path.exists() {
     std::fs::remove_file(&path)?;
-    println!("Removed shell hook script: {}", path.display());
+    item(
+      "Shell hook",
+      format!("{} ({})", info("REMOVED"), path.display()),
+    );
   } else {
-    println!("No shell hook script found at {}", path.display());
+    item(
+      "Shell hook",
+      format!("{} ({})", warn("MISSING"), path.display()),
+    );
   }
   Ok(())
 }
@@ -129,7 +145,10 @@ fn uninstall_git_hooks(ctx: &AppContext) -> Result<()> {
         .status()?;
     }
   }
-  println!("Uninstalled git hooks from {}", hooks_dir.display());
+  item(
+    "Git hooks",
+    format!("{} ({})", info("UNINSTALLED"), hooks_dir.display()),
+  );
   Ok(())
 }
 

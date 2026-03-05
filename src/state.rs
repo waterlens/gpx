@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::config::{AppContext, ConfigSource};
+use crate::output::{fail, info, item, note, ok, section, warn};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct RuntimeState {
@@ -17,90 +18,116 @@ pub struct RuntimeState {
 pub fn status(ctx: &AppContext, verbose: bool) -> Result<()> {
   let loaded = ctx.load_config_with_info()?;
   let config = loaded.config;
+  section("Status report");
+
   if let Err(e) = config.validate() {
-    println!("Config validation: FAIL ({})", e);
+    item("Config validation", format!("{} ({})", fail("FAIL"), e));
   } else {
-    println!("Config validation: OK");
+    item("Config validation", ok("OK"));
   }
   let state = load_state(ctx).unwrap_or_default();
 
-  println!("Config dir: {}", ctx.config_dir.display());
-  println!(
-    "Config source: {}",
+  item("Config dir", ctx.config_dir.display());
+  item(
+    "Config source",
     match loaded.source {
-      ConfigSource::Toml => "config.toml",
-      ConfigSource::Ini => "config (INI)",
-      ConfigSource::Default => "defaults (no config file)",
-    }
+      ConfigSource::Toml => info("config.toml"),
+      ConfigSource::Ini => info("config (INI)"),
+      ConfigSource::Default => warn("defaults (no config file)"),
+    },
   );
   if loaded.both_configs_present {
-    println!("Warning: both config.toml and config exist; config.toml takes precedence.");
+    note(format!(
+      "Warning: {} both config.toml and config exist; config.toml takes precedence.",
+      warn("WARN")
+    ));
   }
 
-  println!("Profiles: {}", config.profile.len());
-  println!("Rules: {}", config.rule.len());
-  println!(
-    "Apply mode: {}",
+  item("Profiles", info(&config.profile.len().to_string()));
+  item("Rules", info(&config.rule.len().to_string()));
+  item(
+    "Apply mode",
     match config.core.mode {
-      crate::config::ApplyMode::GlobalActive => "global-active",
-      crate::config::ApplyMode::RepoLocal => "repo-local",
-    }
+      crate::config::ApplyMode::GlobalActive => info("global-active"),
+      crate::config::ApplyMode::RepoLocal => info("repo-local"),
+    },
   );
-  println!(
-    "Worktree shared fallback: {}",
+  item(
+    "Worktree shared fallback",
     if config.worktree.allow_shared_fallback {
-      "enabled"
+      warn("ENABLED")
     } else {
-      "disabled"
-    }
+      ok("DISABLED")
+    },
   );
-  println!(
-    "Hook fix policy: {}",
+  item(
+    "Hook fix policy",
     match config.hook.fix_policy {
-      crate::config::HookFixPolicy::Continue => "continue",
-      crate::config::HookFixPolicy::AbortOnce => "abort-once",
-    }
+      crate::config::HookFixPolicy::Continue => ok("continue"),
+      crate::config::HookFixPolicy::AbortOnce => warn("abort-once"),
+    },
   );
-  println!(
-    "SSH dynamicMatch: {}",
-    if config.ssh.dynamic_match {
-      "enabled (experimental)"
-    } else {
-      "disabled"
-    }
-  );
-  println!(
-    "Last applied profile: {}",
-    state.last_profile.unwrap_or_else(|| "<none>".to_string())
+  if config.ssh.dynamic_match {
+    item(
+      "SSH dynamicMatch",
+      format!("{} (experimental)", warn("ENABLED")),
+    );
+  } else {
+    item("SSH dynamicMatch", ok("DISABLED"));
+  }
+  item(
+    "Last applied profile",
+    state
+      .last_profile
+      .as_deref()
+      .map(info)
+      .unwrap_or_else(|| warn("<none>")),
   );
 
   if verbose {
-    println!(
-      "Last rule: {}",
-      state.last_rule.unwrap_or_else(|| "<none>".to_string())
+    item(
+      "Last rule",
+      state
+        .last_rule
+        .as_deref()
+        .map(info)
+        .unwrap_or_else(|| warn("<none>")),
     );
-    println!(
-      "Last reason: {}",
-      state.last_reason.unwrap_or_else(|| "<none>".to_string())
+    item(
+      "Last reason",
+      state
+        .last_reason
+        .as_deref()
+        .map(info)
+        .unwrap_or_else(|| warn("<none>")),
     );
-    println!(
-      "Last cwd: {}",
-      state.last_cwd.unwrap_or_else(|| "<none>".to_string())
+    item(
+      "Last cwd",
+      state
+        .last_cwd
+        .as_deref()
+        .map(info)
+        .unwrap_or_else(|| warn("<none>")),
     );
-    println!(
-      "Last change summary: {}",
+    item(
+      "Last change summary",
       state
         .last_change_summary
-        .unwrap_or_else(|| "<none>".to_string())
+        .as_deref()
+        .map(info)
+        .unwrap_or_else(|| warn("<none>")),
     );
-    println!(
-      "Last applied unix timestamp: {}",
+    item(
+      "Last applied unix timestamp",
       state
         .last_applied_unix
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "<none>".to_string())
+        .map(|v| info(&v.to_string()))
+        .unwrap_or_else(|| warn("<none>")),
     );
-    println!("{:#?}", config);
+    note("Effective config dump (debug):");
+    for line in format!("{:#?}", config).lines() {
+      note(line);
+    }
   }
   Ok(())
 }

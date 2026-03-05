@@ -1,5 +1,6 @@
 use crate::config::{AppContext, ApplyMode, Config, HookFixPolicy, Profile, SshConfig};
 use crate::error::GpxError;
+use crate::output::{info, item, section, warn};
 use crate::rules::{gather_context, resolve_profile_detailed};
 use crate::state;
 use anyhow::{Context, Result};
@@ -7,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn init(ctx: &AppContext) -> Result<()> {
+  section("Init report");
   ctx.create_dirs()?;
 
   let gitconfig_path = directories::UserDirs::new()
@@ -17,7 +19,7 @@ pub fn init(ctx: &AppContext) -> Result<()> {
   let include_path = ctx.git_active_include();
   let include_line = format!("[include]\n    path = {}", include_path.to_string_lossy());
 
-  if gitconfig_path.exists() {
+  let include_status = if gitconfig_path.exists() {
     let content = std::fs::read_to_string(&gitconfig_path)?;
     if !content.contains(&include_path.to_string_lossy().to_string()) {
       let mut new_content = content;
@@ -28,13 +30,22 @@ pub fn init(ctx: &AppContext) -> Result<()> {
       new_content.push('\n');
       std::fs::write(&gitconfig_path, new_content)?;
       tracing::info!("Added GPX include to ~/.gitconfig");
+      format!("{} (added to existing ~/.gitconfig)", info("UPDATED"))
     } else {
       tracing::info!("GPX include already exists in ~/.gitconfig");
+      format!("{} (already present)", info("OK"))
     }
   } else {
     std::fs::write(&gitconfig_path, include_line)?;
     tracing::info!("Created ~/.gitconfig with GPX include");
-  }
+    format!("{} (~/.gitconfig created)", info("CREATED"))
+  };
+
+  item("~/.gitconfig include", include_status);
+  item(
+    "Active include path",
+    info(&include_path.display().to_string()),
+  );
 
   Ok(())
 }
@@ -82,7 +93,10 @@ pub fn apply(
     .context(format!("Profile '{}' not found", profile_name))?;
 
   if dry_run {
-    println!("Dry run: Would apply profile '{}'", profile_name);
+    item(
+      "Apply",
+      format!("{} profile '{}'", warn("DRY-RUN"), info(&profile_name)),
+    );
     return Ok(());
   }
 

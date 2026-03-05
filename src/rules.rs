@@ -1,5 +1,6 @@
 use crate::config::{AppContext, Config, Rule, RuleMode};
 use crate::error::GpxError;
+use crate::output::{info, item, section, warn};
 use anyhow::Result;
 use globset::Glob;
 use serde::Serialize;
@@ -353,14 +354,17 @@ pub fn check(ctx: &AppContext, cwd: Option<PathBuf>, json: bool) -> Result<()> {
   if json {
     println!("{}", serde_json::to_string_pretty(&resolution)?);
   } else {
+    section("Check report");
     match resolution.resolved_profile {
-      Some(profile) => println!("Profile: {}", profile),
-      None => println!("No profile matched."),
+      Some(profile) => item("Profile", info(&profile)),
+      None => item("Profile", warn("NONE")),
     }
     if let Some(rule) = resolution.matched_rule {
-      println!("Matched rule: {}", rule);
+      item("Matched rule", info(&rule));
+    } else {
+      item("Matched rule", warn("<none>"));
     }
-    println!("Reason: {}", resolution.reason);
+    item("Reason", info(&resolution.reason));
   }
 
   Ok(())

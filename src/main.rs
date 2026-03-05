@@ -10,6 +10,7 @@ mod doctor;
 mod error;
 mod gitops;
 mod hooks;
+mod output;
 mod rules;
 mod run;
 mod sshops;
@@ -31,7 +32,7 @@ fn main() {
 fn run() -> Result<()> {
   // Initialize tracing
   let subscriber = FmtSubscriber::builder()
-    .with_max_level(Level::INFO)
+    .with_max_level(Level::WARN)
     .finish();
   tracing::subscriber::set_global_default(subscriber)?;
 

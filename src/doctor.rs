@@ -1,14 +1,14 @@
 use crate::config::AppContext;
 use crate::config::ConfigSource;
+use crate::output::{fail, info, ok, section, warn};
 use anyhow::Result;
-use owo_colors::OwoColorize;
 use std::path::Path;
 use std::process::Command;
 
 pub fn run(ctx: &AppContext) -> Result<()> {
   let loaded = ctx.load_config_with_info()?;
 
-  println!("Doctor report");
+  section("Doctor report");
   println!("- Config dir: {}", ctx.config_dir.display());
   println!("- Cache dir: {}", ctx.cache_dir.display());
   println!("- State dir: {}", ctx.state_dir.display());
@@ -16,13 +16,16 @@ pub fn run(ctx: &AppContext) -> Result<()> {
   println!(
     "- Config source: {}",
     match loaded.source {
-      ConfigSource::Toml => "config.toml",
-      ConfigSource::Ini => "config (INI)",
-      ConfigSource::Default => "defaults",
+      ConfigSource::Toml => info("config.toml"),
+      ConfigSource::Ini => info("config (INI)"),
+      ConfigSource::Default => warn("defaults"),
     }
   );
   if loaded.both_configs_present {
-    println!("- Warning: both config.toml and config exist; config.toml takes precedence.");
+    println!(
+      "- Warning: {} both config.toml and config exist; config.toml takes precedence.",
+      warn("WARN")
+    );
   }
 
   match loaded.config.validate() {
@@ -38,7 +41,7 @@ pub fn run(ctx: &AppContext) -> Result<()> {
   let gitconfig_path = match directories::UserDirs::new() {
     Some(u) => u.home_dir().join(".gitconfig"),
     None => {
-      println!("- Could not resolve home directory.");
+      println!("- Home directory resolution: {}", fail("FAIL"));
       return Ok(());
     }
   };
@@ -134,7 +137,7 @@ pub fn run(ctx: &AppContext) -> Result<()> {
     Ok(out) => {
       let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
       if version.is_empty() {
-        println!("- Git version: unknown");
+        println!("- Git version: {}", warn("UNKNOWN"));
       } else {
         println!("- Git version: {}", version);
         if let Some((major, minor)) = parse_git_version(&version) {
@@ -253,7 +256,10 @@ fn check_worktree_risk() -> Result<()> {
         "- worktreeConfig: {} disabled in linked worktree (profile switching may leak across worktrees)",
         warn("WARN")
       );
-      println!("- Suggested fix: git config extensions.worktreeConfig true");
+      println!(
+        "- Suggested fix: {}",
+        info("git config extensions.worktreeConfig true")
+      );
     } else {
       println!("- worktreeConfig: {}", ok("DISABLED"));
     }
@@ -262,22 +268,13 @@ fn check_worktree_risk() -> Result<()> {
       "- worktreeConfig: {} unset in linked worktree",
       warn("WARN")
     );
-    println!("- Suggested fix: git config extensions.worktreeConfig true");
+    println!(
+      "- Suggested fix: {}",
+      info("git config extensions.worktreeConfig true")
+    );
   } else {
     println!("- worktreeConfig: {}", warn("UNSET"));
   }
 
   Ok(())
-}
-
-fn ok(text: &str) -> String {
-  text.green().to_string()
-}
-
-fn warn(text: &str) -> String {
-  text.yellow().to_string()
-}
-
-fn fail(text: &str) -> String {
-  text.red().to_string()
 }
