@@ -15,9 +15,10 @@
 # [core]
 # defaultProfile = "personal"      # fallback when no rule matches
 # ruleMode = "first-match"         # first-match | highest-score
-# mode = "global-active"           # global-active | repo-local
+# mode = "repo-local"              # repo-local | global-active
+# - repo-local: write include.path into current repo/worktree config; this avoids
+#   cross-directory "last apply wins" conflicts and is the default
 # - global-active: update shared active include at ~/.cache/gpx/git/active.gitconfig
-# - repo-local: write include.path into current repo config (requires running inside a git repo)
 #   - linked worktree + extensions.worktreeConfig=false needs worktree.allowSharedFallback=true
 #
 # first-match:
@@ -104,6 +105,7 @@
 #
 # [ssh]
 # dynamicMatch = false             # true => generate Match exec blocks (experimental)
+# repo-local mode writes Git SSH keys through core.sshCommand by default.
 #
 # ------------------------------------------------------------------------------
 # Rules

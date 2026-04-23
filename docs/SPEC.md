@@ -10,12 +10,13 @@ This is the full product/design specification.
 - Executable name: `gpx`
 - Candidate full name:
   - `Git Profile Extension` (concise and intuitive)
-- Core goal: Automatically switch Git and SSH identity configuration based on the active profile, preferring the include mechanism to avoid frequent direct rewrites of the main config file.
+- Core goal: Automatically switch Git and SSH identity configuration based on the active profile, preferring repository/worktree-local includes so multiple open directories do not fight over one process-wide active identity.
 - Platform scope: Unix (Linux/macOS).
 
 ## 2. Design Principles
 
 - Minimal intrusion: Prefer one-time bootstrap, then complete switching via include files and rule evaluation.
+- Isolation by default: Avoid mutable global "current profile" state for normal Git operations; use shared state only as audit/cache data or when `core.mode = "global-active"` is explicitly selected.
 - Recoverable: All automatic rewrites must be traceable and reversible.
 - Independent operation: Shell hooks and Git global hooks can be enabled independently or together.
 - Low latency: Normal execution on hook paths should stay in the tens-of-milliseconds range.
@@ -28,7 +29,8 @@ Follow the XDG Base Directory specification:
 
 - Primary config: `$XDG_CONFIG_HOME/gpx/config.toml` (default `~/.config/gpx/config.toml`, TOML syntax)
 - Compatible config: `$XDG_CONFIG_HOME/gpx/config` (gitconfig/INI syntax, optional)
-- Generated Git include: `$XDG_CACHE_HOME/gpx/git/profiles/<name>.gitconfig`
+- Generated Git profile include: `$XDG_CACHE_HOME/gpx/git/profiles/<name>.gitconfig`
+- Generated Git active include: `$XDG_CACHE_HOME/gpx/git/active.gitconfig` (inert by default; used by `global-active`)
 - Generated SSH include: `$XDG_CACHE_HOME/gpx/ssh/gpx_ssh.conf`
 - Runtime state: `$XDG_STATE_HOME/gpx/state.toml`
 - Logs (optional): `$XDG_STATE_HOME/gpx/logs/*.log`
@@ -47,7 +49,7 @@ Use TOML (`config.toml`) by default:
 [core]
 defaultProfile = "personal"
 ruleMode = "first-match" # first-match | highest-score
-mode = "global-active"   # global-active | repo-local
+mode = "repo-local"      # repo-local | global-active
 
 [profile.work.user]
 name = "Alice Chen"
@@ -137,13 +139,13 @@ Common config item reference (must stay in sync with README):
 - `[core].ruleMode`: Rule decision strategy.
   - `first-match`: Use declaration order and take the first matched rule.
   - `highest-score`: Compare `priority` first, then condition specificity.
-- `[core].mode`: Write strategy for `gpx apply`.
-  - `global-active`: Update the global active include (`~/.cache/gpx/git/active.gitconfig`).
-  - `repo-local`: Write include into the current repository/worktree.
+- `[core].mode`: Write strategy for `gpx apply`; default `repo-local`.
+  - `repo-local`: Write include into the current repository/worktree, avoiding cross-directory global active-state conflicts.
+  - `global-active`: Update the global active include (`~/.cache/gpx/git/active.gitconfig`); the last apply wins for all directories that rely on global config.
 - `[profile.<name>.user]`: Git identity fields (e.g. `name`, `email`, `signingkey`) compiled into profile include files.
 - `[profile.<name>.gpg]`: Optional `gpg.*` fields for the profile.
-- `[profile.<name>.ssh].key`: SSH private key path for the profile (supports `~` expansion).
-- `[profile.<name>.ssh].identitiesOnly`: When `true`, only explicitly configured keys are used, avoiding unrelated keys.
+- `[profile.<name>.ssh].key`: SSH private key path for the profile (supports `~` expansion). In `repo-local` mode this is compiled into the profile Git include as `core.sshCommand`.
+- `[profile.<name>.ssh].identitiesOnly`: When `true`, only explicitly configured keys are used, avoiding unrelated keys. In `repo-local` mode this becomes `-o IdentitiesOnly=yes` in `core.sshCommand`.
 - `[hook].fixPolicy`: Behavior after hook-mode auto-fixes identity.
   - `continue`: Continue current Git action after fixing.
   - `abort-once`: Abort current action once after fixing; user retries manually.
@@ -220,7 +222,7 @@ Behavior conventions:
 - Multiple matched rules tied on score: report error with conflicting rule names and require priority adjustment.
 - Non-existent profile: report config error and refuse apply.
 
-## 7. Git Config Injection Strategy (Prefer Include)
+## 7. Git Config Injection Strategy (Prefer Repo-Local Include)
 
 ### 7.1 One-Time Bootstrap
 
@@ -235,7 +237,14 @@ Behavior conventions:
 # <<< gpx managed include <<<
 ```
 
-- `active.gitconfig` is maintained by gpx and includes the concrete profile file:
+- In the default `repo-local` mode, `active.gitconfig` is intentionally inert:
+
+```ini
+# gpx managed file
+# core.mode=repo-local keeps Git identity in repository/worktree config
+```
+
+- In `global-active` mode, `active.gitconfig` is maintained by gpx and includes the concrete profile file:
 
 ```ini
 # gpx managed file
@@ -252,7 +261,8 @@ Behavior conventions:
 Advantages:
 
 - Main config is not repeatedly rewritten.
-- Switching only updates the target path in `active.gitconfig`.
+- Default switching writes the current repository/worktree include, so two open repositories can use different profiles at the same time.
+- `global-active` switching only updates the target path in `active.gitconfig`, but it remains shared mutable state.
 
 ### 7.2 Profile Compilation
 
@@ -260,19 +270,27 @@ Each profile is compiled into an independent file:
 
 - `~/.cache/gpx/git/profiles/<profile>.gitconfig`
 - Contains only keys for that profile (e.g. `user.name/user.email/user.signingkey/gpg.*`)
+- When `profile.<name>.ssh` is configured, contains `core.sshCommand` so Git uses the profile's SSH key without relying on a shared `~/.ssh/config` rewrite.
 
-### 7.3 Repository-Level Override
+### 7.3 Repository-Level Apply
 
-For repository isolation, inject repo-local include into `.git/config` (optional mode):
+For repository isolation, inject repo-local include into `.git/config`:
 
-- Default prefers global active include (simpler)
-- When `mode = repo-local` is enabled, inject `include.path = ~/.cache/gpx/git/profiles/<profile>.gitconfig` per repository
+- Default mode is `repo-local`.
+- When `mode = repo-local` is enabled, inject `include.path = ~/.cache/gpx/git/profiles/<profile>.gitconfig` per repository or worktree.
+- When `mode = global-active` is enabled, inject only through `~/.cache/gpx/git/active.gitconfig`; this is simpler but not isolated across concurrently open directories.
 
-## 8. SSH Config Injection Strategy (Include + Host Alias/Match)
+## 8. SSH Strategy
 
 Practical constraint: Native SSH is not cwd-aware, so static config alone cannot fully implement directory-driven identity switching.
 
-Recommended implementation (stable approach):
+Recommended implementation for Git (stable default):
+
+- Compile `profile.<name>.ssh` into each generated Git profile include as `core.sshCommand`.
+- In `repo-local` mode, the repository/worktree include selects both Git identity and Git SSH key, so concurrent repositories do not share one active SSH identity.
+- The managed `~/.cache/gpx/ssh/gpx_ssh.conf` file remains present for reversibility, but without `ssh.dynamicMatch` it is inert in `repo-local` mode to avoid stale global key selection.
+
+Shared SSH include behavior (`global-active` or direct SSH support):
 
 - Add fixed include in `~/.ssh/config`:
 
@@ -289,6 +307,7 @@ Host *
 ```
 
 - Refresh this file when profile switches.
+- This mode is shared process-wide; the last `gpx apply` wins for direct SSH and any Git command that does not use `core.sshCommand`.
 
 Optional enhancement (advanced):
 
@@ -427,9 +446,11 @@ Module layout:
 
 ## 13. Performance and Concurrency
 
+- Default operation must not depend on one global mutable active profile. `repo-local` mode stores the selected profile in repository/worktree config, and generated profile files carry their Git SSH command.
+- `global-active` is an explicit compatibility mode with shared last-writer-wins semantics.
 - Cache latest `cwd -> profile` result (state + memory)
 - Use "write temp file + atomic rename" for file writes
-- Add file locks to key write operations to avoid concurrent hook races
+- Add file locks to key write operations to avoid concurrent hook races; short-lived concurrent applies should wait briefly instead of failing immediately.
 - Avoid scanning whole repo on every hook:
   - file-based rules check only explicitly declared files
   - remote parsing is cached at repository level
@@ -461,16 +482,16 @@ Acceptance checklist:
 
 - profile/rule parsing and validation (TOML/INI compatible)
 - `check/apply/status/list/git/doctor` commands available
-- Git include injection (global active include + repo-local/worktree strategy)
-- SSH include static refresh and optional dynamic matching via `ssh.dynamicMatch`
+- Git include injection (repo-local/worktree strategy by default, plus explicit global active mode)
+- Git SSH key injection through per-profile `core.sshCommand`; SSH include static refresh for global-active and optional dynamic matching via `ssh.dynamicMatch`
 - shell hook (bash/zsh/fish) and git hook (pre-commit/pre-push/post-checkout) install/uninstall
 - hook fix policy (`continue` / `abort-once`) and state audit output
 - submodule independent evaluation and linked-worktree risk control
 
 ## 17. Key Trade-off Conclusions
 
-- On Git side, prioritize the "global stable entry + active include" model to reduce risks from frequent main-config rewrites.
-- On SSH side, default to "fixed include + rewrite target segment on switch" for predictability and performance.
+- On Git side, prioritize repo-local includes to avoid multi-directory conflicts while still avoiding repeated main-config rewrites.
+- On SSH side for Git, default to per-profile `core.sshCommand`; fixed global SSH include remains available for global-active/direct SSH workflows, and dynamic Match exec remains optional.
 - Hooks use "dual-path complement with independent enablement" to support both CLI and GUI users.
 - `run` uses environment variables and `exec` to achieve true zero persistence.
 - submodule/worktree are first-class citizens in rule and write strategies, avoiding later rework.

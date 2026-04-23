@@ -52,6 +52,10 @@ pub fn status(ctx: &AppContext, verbose: bool) -> Result<()> {
       crate::config::ApplyMode::RepoLocal => info("repo-local"),
     },
   );
+  match config.core.mode {
+    crate::config::ApplyMode::RepoLocal => item("Concurrency scope", ok("per-repo")),
+    crate::config::ApplyMode::GlobalActive => item("Concurrency scope", warn("shared-global")),
+  }
   item(
     "Worktree shared fallback",
     if config.worktree.allow_shared_fallback {

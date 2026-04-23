@@ -88,7 +88,7 @@ pub fn init(ctx: &AppContext) -> Result<()> {
     preferred_config.display()
   ));
   note(format!(
-    "{} run `gpx apply` to activate a profile.",
+    "{} run `gpx apply` from a repository/worktree to activate a profile.",
     strong("Next step:")
   ));
 
@@ -476,16 +476,16 @@ pub fn apply(
   }
 
   // 1. Generate profile gitconfig
+  let home = resolve_home_dir()?;
   let profile_gitconfig_path = ctx
     .git_profiles_dir()
     .join(format!("{}.gitconfig", profile_name));
-  let profile_content = generate_git_config(profile);
+  let profile_content = generate_git_config(profile, &home);
   atomic_write(&profile_gitconfig_path, &profile_content)?;
 
   // 2. Apply include strategy
   match config.core.mode {
     ApplyMode::GlobalActive => {
-      let home = resolve_home_dir()?;
       let include_target = display_path_for_config(&profile_gitconfig_path, &home);
       let active_gitconfig_path = ctx.git_active_include();
       let active_content = format!(
@@ -493,8 +493,11 @@ pub fn apply(
         include_target
       );
       atomic_write(&active_gitconfig_path, &active_content)?;
+      refresh_ssh_include(ctx, &config, config.core.mode, profile.ssh.as_ref())?;
     }
     ApplyMode::RepoLocal => {
+      clear_active_include(ctx)?;
+      refresh_ssh_include(ctx, &config, config.core.mode, profile.ssh.as_ref())?;
       apply_repo_local_include(
         &cwd,
         &profile_gitconfig_path,
@@ -502,20 +505,6 @@ pub fn apply(
         config.worktree.allow_shared_fallback,
       )?;
     }
-  }
-
-  // 3. Refresh SSH include (always rewritten to avoid stale identity state)
-  let ssh_config_path = ctx.ssh_include_file();
-  let ssh_content = render_ssh_include(&config, profile.ssh.as_ref());
-  atomic_write(&ssh_config_path, &ssh_content)?;
-
-  // SSH include needs 0600
-  #[cfg(unix)]
-  {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(&ssh_config_path)?.permissions();
-    perms.set_mode(0o600);
-    std::fs::set_permissions(&ssh_config_path, perms)?;
   }
 
   tracing::info!("Applied profile '{}'", profile_name);
@@ -553,7 +542,38 @@ fn build_change_summary(previous_profile: Option<&str>, current_profile: &str) -
   }
 }
 
-fn generate_git_config(profile: &Profile) -> String {
+fn clear_active_include(ctx: &AppContext) -> Result<()> {
+  atomic_write(
+    &ctx.git_active_include(),
+    "# gpx managed file\n# core.mode=repo-local keeps Git identity in repository/worktree config\n",
+  )
+}
+
+fn refresh_ssh_include(
+  ctx: &AppContext,
+  config: &Config,
+  mode: ApplyMode,
+  ssh: Option<&SshConfig>,
+) -> Result<()> {
+  // Repo-local mode keeps Git SSH identity in the per-profile Git include, so
+  // the shared SSH include is intentionally inert unless dynamic Match exec is
+  // enabled.
+  let ssh_config_path = ctx.ssh_include_file();
+  let ssh_content = render_ssh_include(config, mode, ssh);
+  atomic_write(&ssh_config_path, &ssh_content)?;
+
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(&ssh_config_path)?.permissions();
+    perms.set_mode(0o600);
+    std::fs::set_permissions(&ssh_config_path, perms)?;
+  }
+
+  Ok(())
+}
+
+fn generate_git_config(profile: &Profile, home: &Path) -> String {
   let mut content = String::new();
 
   if let Some(ref user) = profile.user {
@@ -576,12 +596,51 @@ fn generate_git_config(profile: &Profile) -> String {
     }
   }
 
+  if let Some(ref ssh) = profile.ssh
+    && let Some(command) = render_git_ssh_command(ssh, home)
+  {
+    content.push_str("[core]\n");
+    content.push_str(&format!("\tsshCommand = {}\n", command));
+  }
+
   content
 }
 
-fn render_ssh_include(config: &Config, ssh: Option<&SshConfig>) -> String {
+fn render_git_ssh_command(ssh: &SshConfig, home: &Path) -> Option<String> {
+  let mut args = vec!["ssh".to_string()];
+  if let Some(ref key) = ssh.key {
+    args.push("-i".to_string());
+    args.push(shell_quote_path(key, home));
+  }
+  if ssh.identities_only {
+    args.push("-o".to_string());
+    args.push("IdentitiesOnly=yes".to_string());
+  }
+  if args.len() == 1 {
+    None
+  } else {
+    Some(args.join(" "))
+  }
+}
+
+fn shell_quote_path(input: &str, home: &Path) -> String {
+  let expanded = if input == "~" {
+    home.to_string_lossy().to_string()
+  } else if let Some(rest) = input.strip_prefix("~/") {
+    home.join(rest).to_string_lossy().to_string()
+  } else {
+    input.to_string()
+  };
+  shell_quote_single(&expanded)
+}
+
+fn render_ssh_include(config: &Config, mode: ApplyMode, ssh: Option<&SshConfig>) -> String {
   if config.ssh.dynamic_match {
     return render_dynamic_ssh_include(config);
+  }
+
+  if mode == ApplyMode::RepoLocal {
+    return "# gpx managed file\n# core.mode=repo-local keeps SSH identity in per-profile Git core.sshCommand\n".to_string();
   }
 
   let Some(ssh) = ssh else {
@@ -647,21 +706,29 @@ impl Drop for FileLockGuard {
 fn apply_lock(ctx: &AppContext) -> Result<FileLockGuard> {
   let lock_path = ctx.state_dir.join("apply.lock");
   std::fs::create_dir_all(&ctx.state_dir)?;
+  let started = std::time::Instant::now();
+  let wait = std::time::Duration::from_secs(5);
+  let poll = std::time::Duration::from_millis(25);
 
-  let file = std::fs::OpenOptions::new()
-    .create_new(true)
-    .write(true)
-    .open(&lock_path);
+  loop {
+    let file = std::fs::OpenOptions::new()
+      .create_new(true)
+      .write(true)
+      .open(&lock_path);
 
-  match file {
-    Ok(_) => Ok(FileLockGuard { path: lock_path }),
-    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-      anyhow::bail!(
-        "Another gpx apply is running (lock: {})",
-        lock_path.display()
-      )
+    match file {
+      Ok(_) => return Ok(FileLockGuard { path: lock_path }),
+      Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && started.elapsed() < wait => {
+        std::thread::sleep(poll);
+      }
+      Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        anyhow::bail!(
+          "Another gpx apply is still running after waiting 5s (lock: {})",
+          lock_path.display()
+        )
+      }
+      Err(e) => return Err(e.into()),
     }
-    Err(e) => Err(e.into()),
   }
 }
 
@@ -740,7 +807,10 @@ mod tests {
   #[test]
   fn test_render_ssh_include_empty_for_profile_without_ssh() {
     let config = Config::default();
-    assert_eq!(render_ssh_include(&config, None), "");
+    assert_eq!(
+      render_ssh_include(&config, ApplyMode::GlobalActive, None),
+      ""
+    );
   }
 
   #[test]
@@ -751,12 +821,25 @@ mod tests {
     };
 
     let config = Config::default();
-    let content = render_ssh_include(&config, Some(&ssh));
+    let content = render_ssh_include(&config, ApplyMode::GlobalActive, Some(&ssh));
     assert!(content.contains("# gpx managed file"));
     assert!(content.contains("Host *"));
     assert!(content.contains("\tIdentityFile ~/.ssh/id_ed25519_work"));
     assert!(content.contains("IdentityFile ~/.ssh/id_ed25519_work"));
     assert!(content.contains("IdentitiesOnly yes"));
+  }
+
+  #[test]
+  fn test_render_ssh_include_repo_local_is_inert_without_dynamic_match() {
+    let ssh = SshConfig {
+      key: Some("~/.ssh/id_ed25519_work".into()),
+      identities_only: true,
+    };
+    let config = Config::default();
+
+    let content = render_ssh_include(&config, ApplyMode::RepoLocal, Some(&ssh));
+    assert!(content.contains("core.mode=repo-local"));
+    assert!(!content.contains("IdentityFile"));
   }
 
   #[test]
@@ -786,7 +869,7 @@ mod tests {
       },
     );
 
-    let content = render_ssh_include(&config, None);
+    let content = render_ssh_include(&config, ApplyMode::RepoLocal, None);
     assert!(content.contains("Match exec \"gpx ssh-eval --profile 'work'\""));
     assert!(content.contains("\tIdentityFile ~/.ssh/id_work"));
     assert!(content.contains("IdentityFile ~/.ssh/id_work"));
@@ -808,6 +891,25 @@ mod tests {
     assert_eq!(
       build_change_summary(None, "work"),
       "Profile initialized: work"
+    );
+  }
+
+  #[test]
+  fn test_generate_git_config_includes_core_ssh_command() {
+    let home = PathBuf::from("/home/alice");
+    let profile = Profile {
+      user: None,
+      gpg: None,
+      ssh: Some(SshConfig {
+        key: Some("~/.ssh/id work".into()),
+        identities_only: true,
+      }),
+    };
+
+    let content = generate_git_config(&profile, &home);
+    assert!(content.contains("[core]\n"));
+    assert!(
+      content.contains("\tsshCommand = ssh -i '/home/alice/.ssh/id work' -o IdentitiesOnly=yes")
     );
   }
 
@@ -970,6 +1072,64 @@ mod tests {
     std::fs::write(repo.join("README.md"), "hello").unwrap();
     git_ok(repo, &["add", "README.md"]);
     git_ok(repo, &["commit", "-m", "init"]);
+  }
+
+  #[test]
+  fn test_apply_repo_local_clears_shared_includes_and_writes_repo_include() {
+    let temp = tempfile::tempdir().unwrap();
+    let ctx = AppContext {
+      config_dir: temp.path().join("config"),
+      cache_dir: temp.path().join("cache"),
+      state_dir: temp.path().join("state"),
+    };
+    ctx.create_dirs().unwrap();
+    std::fs::write(
+      ctx.config_file(),
+      r#"
+        [core]
+        defaultProfile = "work"
+
+        [profile.work.user]
+        name = "Work User"
+        email = "work@example.com"
+
+        [profile.work.ssh]
+        key = "~/.ssh/id_work"
+        identitiesOnly = true
+      "#,
+    )
+    .unwrap();
+    std::fs::write(
+      ctx.git_active_include(),
+      "# gpx managed file\n[include]\n\tpath = /tmp/stale.gitconfig\n",
+    )
+    .unwrap();
+    std::fs::write(
+      ctx.ssh_include_file(),
+      "# gpx managed file\nHost *\n\tIdentityFile /tmp/stale\n",
+    )
+    .unwrap();
+
+    let repo = temp.path().join("repo");
+    init_repo_with_commit(&repo);
+
+    apply(&ctx, Some(repo.clone()), None, false, false).unwrap();
+
+    let profile_path = ctx.git_profiles_dir().join("work.gitconfig");
+    let repo_include = git_out(&repo, &["config", "--local", "--get", "include.path"]);
+    assert_eq!(repo_include, profile_path.to_string_lossy());
+
+    let active_content = std::fs::read_to_string(ctx.git_active_include()).unwrap();
+    assert!(active_content.contains("core.mode=repo-local"));
+    assert!(!active_content.contains("[include]"));
+
+    let ssh_content = std::fs::read_to_string(ctx.ssh_include_file()).unwrap();
+    assert!(ssh_content.contains("core.sshCommand"));
+    assert!(!ssh_content.contains("IdentityFile"));
+
+    let profile_content = std::fs::read_to_string(profile_path).unwrap();
+    assert!(profile_content.contains("sshCommand = ssh -i"));
+    assert!(profile_content.contains("-o IdentitiesOnly=yes"));
   }
 
   #[test]

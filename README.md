@@ -71,13 +71,13 @@
 - Run `gpx init` first.
 - If no config exists, GPX creates a commented template `config.toml` for you.
 - Edit `config.toml` to define your profiles and matching rules.
-- Run `gpx check` and `gpx apply` to verify and activate.
+- Run `gpx check` and `gpx apply` from a repository/worktree to verify and activate.
 
 ## Config Reference
 
 - `[core].defaultProfile`: Required `no` (but required if no rule can match); Default `unset`; Allowed `profile name`.
 - `[core].ruleMode`: Required `no`; Default `first-match`; Allowed `first-match | highest-score`.
-- `[core].mode`: Required `no`; Default `global-active`; Allowed `global-active | repo-local`.
+- `[core].mode`: Required `no`; Default `repo-local`; Allowed `repo-local | global-active`.
 - `[hook].fixPolicy`: Required `no`; Default `continue`; Allowed `continue | abort-once`.
 - `[run].allowProfileOverride`: Required `no`; Default `false`; Allowed `true | false`.
 - `[worktree].allowSharedFallback`: Required `no`; Default `false`; Allowed `true | false`.
@@ -85,6 +85,8 @@
 - `[rule.<name>]`: Required `yes` for automatic switching; `profile` is required and at least one matcher is required from `match.path | match.remoteHost | match.remoteOrg | match.fileExists`.
 
 Hook installation is command-driven (`gpx hook install/uninstall ...`) and no longer uses config toggles like `hook.shell` or `hook.git`.
+
+`repo-local` is the recommended default for multiple terminals, editors, or GUI clients open on different repositories. It writes each repository/worktree to the resolved profile include and stores Git SSH key selection in that profile include via `core.sshCommand`. `global-active` keeps the older shared active include behavior and should be used only when one process-wide active profile is acceptable.
 
 ## Hooks
 

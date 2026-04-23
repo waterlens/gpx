@@ -1,5 +1,5 @@
-use crate::config::AppContext;
 use crate::config::ConfigSource;
+use crate::config::{AppContext, ApplyMode};
 use crate::output::{fail, info, item, note, ok, section, strong, warn};
 use anyhow::Result;
 use std::path::Path;
@@ -35,6 +35,13 @@ pub fn run(ctx: &AppContext) -> Result<()> {
     Ok(_) => item("Config validation", ok("OK")),
     Err(e) => item("Config validation", format!("{} ({})", fail("FAIL"), e)),
   }
+  item(
+    "Apply mode",
+    match loaded.config.core.mode {
+      ApplyMode::RepoLocal => format!("{} (per repository/worktree)", ok("repo-local")),
+      ApplyMode::GlobalActive => format!("{} (shared active include)", warn("global-active")),
+    },
+  );
   if loaded.config.profile.is_empty() {
     suggest_profile_setup = true;
     let preferred_config = preferred_config_path(ctx);
@@ -83,7 +90,12 @@ pub fn run(ctx: &AppContext) -> Result<()> {
       format!("{} ({})", ok("OK"), ctx.git_active_include().display()),
     );
     let active_content = std::fs::read_to_string(ctx.git_active_include())?;
-    if has_active_include_target(&active_content) {
+    if loaded.config.core.mode == ApplyMode::RepoLocal {
+      item(
+        "Active include target",
+        format!("{} (inactive in repo-local mode)", ok("OK")),
+      );
+    } else if has_active_include_target(&active_content) {
       item("Active include target", ok("OK"));
     } else {
       suggest_apply = true;
@@ -139,6 +151,11 @@ pub fn run(ctx: &AppContext) -> Result<()> {
           ),
         );
       }
+    } else if loaded.config.core.mode == ApplyMode::RepoLocal {
+      item(
+        "SSH static include",
+        format!("{} (repo-local uses Git core.sshCommand)", ok("OK")),
+      );
     }
   } else {
     suggest_init = true;
@@ -205,7 +222,7 @@ pub fn run(ctx: &AppContext) -> Result<()> {
   }
   if suggest_profile_setup {
     note(format!(
-      "{} define profiles/rules in config, then run `gpx apply`.",
+      "{} define profiles/rules in config, then run `gpx apply` from the target repository/worktree.",
       strong("Next step:")
     ));
   } else if suggest_apply {

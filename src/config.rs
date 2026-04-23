@@ -50,8 +50,8 @@ pub enum RuleMode {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApplyMode {
-  #[default]
   GlobalActive,
+  #[default]
   RepoLocal,
 }
 
@@ -478,6 +478,11 @@ mod tests {
       },
     );
     assert!(config.validate().is_ok());
+  }
+
+  #[test]
+  fn test_default_apply_mode_is_repo_local() {
+    assert_eq!(Config::default().core.mode, ApplyMode::RepoLocal);
   }
 
   #[test]
