@@ -526,7 +526,7 @@ pub fn apply(
     && previous_state.last_profile.as_deref() != Some(profile_name.as_str())
   {
     anyhow::bail!(
-      "Profile fixed to '{}' in hook-mode; aborting once due to hook.fixPolicy=abort-once",
+      "gpx: profile fixed to '{}' in hook-mode; hook.fixPolicy=abort-once intentionally stopped this git command after updating identity; please retry the git command",
       profile_name
     );
   }
@@ -1130,6 +1130,41 @@ mod tests {
     let profile_content = std::fs::read_to_string(profile_path).unwrap();
     assert!(profile_content.contains("sshCommand = ssh -i"));
     assert!(profile_content.contains("-o IdentitiesOnly=yes"));
+  }
+
+  #[test]
+  fn test_apply_hook_abort_once_message_tells_user_to_retry() {
+    let temp = tempfile::tempdir().unwrap();
+    let ctx = AppContext {
+      config_dir: temp.path().join("config"),
+      cache_dir: temp.path().join("cache"),
+      state_dir: temp.path().join("state"),
+    };
+    ctx.create_dirs().unwrap();
+    std::fs::write(
+      ctx.config_file(),
+      r#"
+        [core]
+        defaultProfile = "work"
+
+        [hook]
+        fixPolicy = "abort-once"
+
+        [profile.work.user]
+        name = "Work User"
+        email = "work@example.com"
+      "#,
+    )
+    .unwrap();
+
+    let repo = temp.path().join("repo");
+    init_repo_with_commit(&repo);
+
+    let err = apply(&ctx, Some(repo), None, false, true).unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("gpx: profile fixed to 'work' in hook-mode"));
+    assert!(message.contains("hook.fixPolicy=abort-once"));
+    assert!(message.contains("please retry the git command"));
   }
 
   #[test]
